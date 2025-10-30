@@ -16,6 +16,10 @@ class user{
         this->id=id;
         this->teamid=teamid;
     }
+    void changeteam(int idi)
+    {
+        this->teamid=idi;
+    }
     
 };
 class Team{
@@ -35,22 +39,80 @@ class Team{
     {
         members.push_back(id);
     }
+    void addNotes(int id)
+    {
+        notes.push_back(id);
+    }
     
 };
-class Note{};
+class Note{
+    int noteid;
+    int version{0};
+    int lastupdatedby{-1};
+    int teamid;
+    std::string title;
+    std::string body;
+    public:
+    Note(int noteid , int teamid ,std::string title ,std::string body){
+        this->noteid = noteid;
+        this->teamid=teamid;
+        this->title=title;
+        this->body=body;
+    }
+    void updated(int creatorid)
+    {
+        this->version++;
+        this->lastupdatedby=creatorid;
+    }
+};
 std::unordered_map<int , user>userDB;
 std::unordered_map<int,Team>teamDB;
+std::unordered_map<int,Note>noteDB;
 int main(){
-
+    std::srand(static_cast<unsigned int>(std::time(nullptr)));
     crow::SimpleApp app;
-    CROW_ROUTE(app,"/createnote")([](){
+    CROW_ROUTE(app,"/createnote")([](const crow::request& req){
+        auto body = crow::json::load(req.body);
+        if(!body)return crow::response(400,"Invalid");
+        if(!body.has("creatorid") || !body.has("teamid"))return crow::response(400,"Invalid");
+        int creatorid = body["creatorid"].i();
+        int teamid = body["teamid"].i();
+        if(userDB.find(creatorid)==userDB.end())return crow::response(400,"Invalid");
+        if(teamDB.find(teamid)==teamDB.end())return crow::response(400,"Invalid");
+        int idih = rand();
+        while(noteDB.find(idih)!=noteDB.end())idih=rand();
+        int noteid = idih;
+        std::string title = body.has("title")?body["title"].s():std::string(" ");
+        
+        std::string content = body.has("body")?body["body"].s():std::string(" ");
+        Note n1(noteid,teamid,title,content);
+        teamDB[teamid].addNotes(noteid);
+        noteDB[noteid]=n1;
+        crow::json::wvalue res;
+        res["status"]="Sucess";
+        res["Message"]="Note created sucessfully";
+        res["noteid"]=noteid;
+        return crow::response(201,res);
+    });
+    CROW_ROUTE(app,"/editnote")([](const crow::request& req){
+
         return crow::response(501,"Not Implemented Yet");
     });
-    CROW_ROUTE(app,"/editnote")([](){
-        return crow::response(501,"Not Implemented Yet");});
-    CROW_ROUTE(app,"/deletenote")([](){
+    CROW_ROUTE(app,"/deletenote").methods("POST"_method)([](const crow::request& req){
         
-        return crow::response(501,"Not Implemented Yet");
+         auto body = crow::json::load(req.body);
+        if(!body)return crow::response(400,"Invalid");
+        if(!body.has("noteid") || !body.has("deleterid"))return crow::response(400,"Invalid");
+        int deleterid = body["deleterid"].i();
+        int noteid = body["noteid"].i();
+        if(userDB.find(deleterid)==userDB.end())return crow::response(400,"Invalid");
+        if(noteDB.find(noteid)==noteDB.end())return crow::response(400,"Invalid");
+        noteDB.erase(noteid);
+        crow::json::wvalue res;
+        res["status"]="Sucess";
+        res["message"]="Sucessfully deleted the note";
+        return crow::response(201,res);
+        
     });
     CROW_ROUTE(app,"/createuser").methods("POST"_method)([](const crow::request& req){
         auto body = crow::json::load(req.body);
@@ -72,6 +134,28 @@ int main(){
         response["message"]="User "+name+" created sucessfully";
         response["id"]=id;
         return crow::response(201,response);
+    });
+    CROW_ROUTE(app,"/createteam").methods("POST"_method)([](const crow::request& req){
+        auto body = crow::json::load(req.body);
+        if(!body)return crow::response(400,"Invalid");
+        if(!body.has("teamname") || !body.has("creatorid"))return crow::response(400,"Invalid");
+        int creatorid = body["creatorid"].i();
+        if(userDB.find(creatorid)==userDB.end())return crow::response(400,"Invalid");
+        
+        int idih =rand();
+        while(teamDB.find(idih)!=teamDB.end()){
+            idih = rand();
+        }
+        int teamid =idih;
+        std::string teamname = body["teamname"].s();
+        Team t1(teamid,teamname);
+        t1.addMember(creatorid);
+        userDB[creatorid].changeteam(teamid);
+        teamDB[teamid] =t1;
+        crow::json::wvalue resp;
+        resp["status"]="Sucess";
+        resp["message"] = "Team "+ teamname+" with "+std::to_string(teamid)+" created sucessfully";
+        return crow::response(201,resp);
     });
     app.port(8080).multithreaded().run();
 }
