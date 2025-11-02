@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <sqlite3.h>
 int binarysearch(int key , int start , int end ,std::vector<int>& nums)
 {
     if (start > end) return -1;
@@ -60,9 +61,18 @@ class Team{
     {
         notes.push_back(id);
     }
+    std::string getteamname(){return TeamName;}
     int getnote(int noteid)
     {
         return binarysearch(noteid,0,notes.size()-1,notes);
+    }
+    std::vector<int> getmembers()
+    {
+        return members;
+    }
+    std::vector<int> getnotelist()
+    {
+        return notes;
     }
 
     
@@ -99,6 +109,14 @@ class Note{
     {
         return body;
     }
+    int getversion(){
+        return version;
+
+    }
+    int getlastupdatedby()
+    {
+        return lastupdatedby;
+    }
 };
 std::unordered_map<int , user>userDB;
 std::unordered_map<int,Team>teamDB;
@@ -106,6 +124,74 @@ std::unordered_map<int,Note>noteDB;
 int main(){
     std::srand(static_cast<unsigned int>(std::time(nullptr)));
     crow::SimpleApp app;
+    CROW_ROUTE(app,"/getnote/<int>")([](int noteid){
+        if(noteDB.find(noteid)==noteDB.end())return crow::response(400,"Invalid");
+        Note &resp = noteDB[noteid];
+        crow::json::wvalue res;
+        res["title"] = resp.gettitle();
+        res["body"] = resp.getbody();
+        res["teamid"] = resp.getteamid();
+        res["status"]="Sucess";
+        return crow::response(200,res); 
+    });
+    CROW_ROUTE(app,"/getteam/<int>")([](int teamid){
+        if(teamDB.find(teamid)==teamDB.end())return crow::response(400,"Invalid");
+        Team &T = teamDB[teamid];
+        crow::json::wvalue res;
+        std::vector<crow::json::wvalue> memberList;
+        std::vector<crow::json::wvalue> noteList;
+
+        for (auto uid : T.getmembers()) {
+         crow::json::wvalue val;
+         val = uid;
+         memberList.push_back(val);
+        }
+    for (auto nid : T.getnotelist()) {
+    crow::json::wvalue val;
+    val = nid;
+    noteList.push_back(val);
+        }
+
+        res["members"]=memberList;
+        res["notes"] = noteList;
+        return crow::response(200,res);
+
+    });
+    CROW_ROUTE(app, "/syncnotes").methods("POST"_method)([](const crow::request& req){
+    auto body = crow::json::load(req.body);
+    if (!body) return crow::response(400, "Invalid JSON");
+    if (!body.has("teamid") || !body.has("lastversion"))
+        return crow::response(400, "Missing fields");
+
+    int teamid = body["teamid"].i();
+    int lastVersion = body["lastversion"].i();
+
+    if (teamDB.find(teamid) == teamDB.end())
+        return crow::response(400, "Invalid team");
+
+    crow::json::wvalue res;
+    std::vector<crow::json::wvalue> updatedNotes;
+
+    for (int noteid : teamDB[teamid].getnotelist()) {
+        if (noteDB.find(noteid) == noteDB.end()) continue;
+        Note &n = noteDB[noteid];
+        if (n.getversion() > lastVersion) {
+            crow::json::wvalue noteJson;
+            noteJson["noteid"] = noteid;
+            noteJson["title"] = n.gettitle();
+            noteJson["body"] = n.getbody();
+            noteJson["version"] = n.getversion();
+            noteJson["lastupdatedby"] = n.getlastupdatedby();
+            updatedNotes.push_back(std::move(noteJson));
+        }
+    }
+
+    res["updatedNotes"] = std::move(updatedNotes);
+    res["status"] = "Success";
+    res["message"] = "Sync complete";
+    return crow::response(200, res);
+});
+
     CROW_ROUTE(app,"/createnote")([](const crow::request& req){
         auto body = crow::json::load(req.body);
         if(!body)return crow::response(400,"Invalid");
@@ -129,7 +215,7 @@ int main(){
         res["noteid"]=noteid;
         return crow::response(201,res);
     });
-    CROW_ROUTE(app,"/editnote")([](const crow::request& req){
+    CROW_ROUTE(app,"/editnote").methods("POST"_method)([](const crow::request& req){
         auto body = crow::json::load(req.body);
         if(!body)return crow::response(400,"Invalid");
         if(!body.has("noteid") || !body.has("editorid"))return crow::response(400,"Invalid");
@@ -172,6 +258,7 @@ int main(){
         return crow::response(201,res);
         
     });
+
     CROW_ROUTE(app,"/createuser").methods("POST"_method)([](const crow::request& req){
         auto body = crow::json::load(req.body);
         if(!body)return crow::response(400,"Invalid");
