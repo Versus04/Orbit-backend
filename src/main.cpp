@@ -3,6 +3,19 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+int binarysearch(int key , int start , int end ,std::vector<int>& nums)
+{
+    if (start > end) return -1;
+    int mid = start+(end-start)/2;
+    if(nums[mid]==key)return mid;
+    else if(nums[mid]>key)
+    {
+        return binarysearch(key,start,mid-1,nums);
+    }else if(nums[mid]<key)
+    {
+        return binarysearch(key,mid+1,end,nums);
+    }
+}
 class user{
     std::string name,email;
     int id;
@@ -19,6 +32,10 @@ class user{
     void changeteam(int idi)
     {
         this->teamid=idi;
+    }
+    int getteam()
+    {
+        return teamid;
     }
     
 };
@@ -43,6 +60,11 @@ class Team{
     {
         notes.push_back(id);
     }
+    int getnote(int noteid)
+    {
+        return binarysearch(noteid,0,notes.size()-1,notes);
+    }
+
     
 };
 class Note{
@@ -59,10 +81,23 @@ class Note{
         this->title=title;
         this->body=body;
     }
-    void updated(int creatorid)
+    void updated(int creatorid , std::string newcontent)
     {
+        body=newcontent;
         this->version++;
         this->lastupdatedby=creatorid;
+    }
+    int getteamid()
+    {
+        return teamid;
+    }
+    std::string gettitle()
+    {
+        return title;
+    }
+    std::string getbody()
+    {
+        return body;
     }
 };
 std::unordered_map<int , user>userDB;
@@ -95,8 +130,31 @@ int main(){
         return crow::response(201,res);
     });
     CROW_ROUTE(app,"/editnote")([](const crow::request& req){
-
-        return crow::response(501,"Not Implemented Yet");
+        auto body = crow::json::load(req.body);
+        if(!body)return crow::response(400,"Invalid");
+        if(!body.has("noteid") || !body.has("editorid"))return crow::response(400,"Invalid");
+        int editorid = body["editorid"].i();
+        int noteid = body["noteid"].i();
+        if(noteDB.find(noteid)==noteDB.end())return crow::response(400,"Invalid");;
+        if(userDB.find(editorid)==userDB.end())return crow::response(400,"Invalid");
+        int teamid = userDB[editorid].getteam();
+        if(teamDB.find(teamid)==teamDB.end()){
+            return crow::response(400,"Invalid");
+        }
+        if(noteDB[noteid].getteamid()!=teamid)
+        {
+            return crow::response(400,"Invalid");
+        }
+        else {
+            Note& xd = noteDB[noteid];
+            std::string newcontent = body.has("content") ? body["content"].s() : std::string("");
+            xd.updated(editorid,newcontent);
+            //noteDB[noteid]=xd;
+        }
+        crow::json::wvalue res;
+        res["Status"]="Sucess";
+        res["message"]="Note is sucessfully edited";
+        return crow::response(201,res);
     });
     CROW_ROUTE(app,"/deletenote").methods("POST"_method)([](const crow::request& req){
         
